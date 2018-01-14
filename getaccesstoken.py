@@ -1,8 +1,12 @@
 import re
-import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from webbrowser import open_new
-from Setting import client_id, secret
+from time import sleep
+
+from selenium import webdriver
+from selenium.webdriver.common.alert import Alert
+import requests
+
+from Setting import client_id, secret, DRIVER_DIR
 
 REDIRECT_URL = 'http://localhost:8000'
 
@@ -51,7 +55,6 @@ class HTTPServerHandler(BaseHTTPRequestHandler):
             self.server.access_token_status_code = r.status_code
             self.server.access_token = result_json['access_token']
 
-
 class TokenHandler:
     """
     Twitch token을 처리 하기 위한 클래스
@@ -70,12 +73,26 @@ class TokenHandler:
         """
         토큰을 얻기 위한 함수
         """
-        # twtuch code를 얻기 위한 uri
+        # twtuch code를 얻기 위한 uri scope=clips:edit 이 있어야 token에 클립을 생성할 수 있는 권한을 얻는다.
         GET_TWITCH_CODE_URI = ("https://api.twitch.tv/kraken/oauth2/" + 'authorize?client_id=' + client_id
                                + '&redirect_uri=' + REDIRECT_URL + '&response_type=code' + '&scope=clips:edit')
         # uri을 브라우저로 실행
+        # 처음에는 open_new(GET_TWITCH_CODE_URI) 구현했지만 python의 webbrowser는 browser 닫히지 않아서 수동으로 직접
+        # 닫아줘야 합니다. 두 번째 방법으로는 Popen 으로 실행시켜서 프로세스를 제거하는 방법입니다. 하지만 Popen으로 browser를 실행시키면
+        # 실행시킨 browser는 다른 프로세스 입니다 즉 Popen의 프로세스를 종료시켜도 브라우저는 그대로 있습니다. 그래서 browser의
+        # 프로세스 아이디를 kill 시키면 browser 꺼지는 게 아니라 그냥 연결만 끊어지고 browser 켜진 상태로 있습니다
+        # 그래서 결국 selenium의 webdriver를 사용해야 했습니다
 
-        open_new(GET_TWITCH_CODE_URI)
+        # Chrome에 cromedriver의 결로를 설정 해줘야함
+        # https://sites.google.com/a/chromium.org/chromedriver/downloads << 다운로드 경로
+        browser = webdriver.Chrome(DRIVER_DIR)
+        # url로 browser 실행
+        browser.get(GET_TWITCH_CODE_URI)
+        # browser 켠다고 browser 포커스가 옮겨지는 것이 아니라 알람 기능을 사용해야 했습니다
+        # execute_script는 browser 에서 자바스크립트를 동작시키게 하는 함수 입니다.
+        browser.execute_script("window.alert('')")
+        # 알람을 자동으로 확인 합니다.
+        Alert(browser).accept()
 
         # lambda request, address, server: HTTPServerHandler 이 부분에서 request, address, server
         # HTTPServerHandler에 self._id, self._secret 넣기 위해 존재하는 것 이라고 보면 됌 request, address, server 에는
@@ -85,5 +102,10 @@ class TokenHandler:
 
         # http 요청을 한 번만 받음
         httpServer.handle_request()
-
+        # check_call(['kill', '/F','/T','/PID', str(p.pid)])
+        sleep(3)
+        # 현재 띄워진 창을 자동으로 닫습니다. close는 chrome 자체를 종료시키는 것이고 quit는 창을 닫기만 하는 차이 입니다.
+        browser.close()
         return httpServer.access_token, httpServer.access_token_status_code
+
+
